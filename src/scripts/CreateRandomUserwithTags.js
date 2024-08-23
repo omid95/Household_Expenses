@@ -1,85 +1,104 @@
-const sqlite3 = require('sqlite3'); // Import the sqlite3 module
-const debug = require('debug')('app:database'); // Import the debug module and create a debug namespace
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
-const dbPath = './src/Db/expanseSchema.db';
-const db = new sqlite3.Database(dbPath);
+const dbPath = path.resolve('./src/Db/expanseSchema.db');
 
-db.serialize(() => {
-  // Step 1: Insert 5 tags into the Tags table
-  const tags = ['Groceries', 'Utilities', 'Entertainment', 'Travel', 'Dining'];
-  tags.forEach(tag => {
-    db.run(`
-      INSERT INTO Tags (name) VALUES (?)
-    `, [tag], function(err) {
-      if (err) {
-        debug('Error inserting tag:', err.message);
-      } else {
-        debug('Inserted tag:', tag);
-      }
-    });
-  });
+const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+    process.exit(1);
+  }
+  console.log('Connected to the database.');
 
-  // Step 2: Insert one user into the Users table
-  db.run(`
-    INSERT INTO Users (username, email) VALUES (?, ?)
-  `, ['Omid Yousefian', 'omid@example.com'], function(err) {
+  // Enable foreign key constraints
+  db.run('PRAGMA foreign_keys = ON');
+
+  // Start a transaction
+  db.run('BEGIN TRANSACTION', (err) => {
     if (err) {
-      debug('Error inserting user:', err.message);
-    } else {
-      debug('Inserted user: Omid Yousefian');
+      console.error('Error starting transaction:', err.message);
+      return db.run('ROLLBACK');
     }
-  });
 
-  // Step 3: Insert 12 expenses on different days, 5 of which have unique tags
-  const userId = 1; // Assuming the user_id of Omid Yousefian is 1
-  const expenses = [
-    { amount: 5000, date: '2024-08-01', description: 'Grocery shopping', tags: ['Groceries'] },
-    { amount: 2000, date: '2024-08-02', description: 'Electricity bill', tags: ['Utilities'] },
-    { amount: 8000, date: '2024-08-03', description: 'Movie tickets', tags: ['Entertainment'] },
-    { amount: 15000, date: '2024-08-04', description: 'Weekend trip', tags: ['Travel'] },
-    { amount: 4000, date: '2024-08-05', description: 'Dining out', tags: ['Dining'] },
-    { amount: 3000, date: '2024-08-06', description: 'Gas refill', tags: [] },
-    { amount: 2500, date: '2024-08-07', description: 'Internet bill', tags: ['Utilities'] },
-    { amount: 10000, date: '2024-08-08', description: 'Concert tickets', tags: ['Entertainment'] },
-    { amount: 7000, date: '2024-08-09', description: 'Grocery shopping', tags: ['Groceries'] },
-    { amount: 12000, date: '2024-08-10', description: 'Flight tickets', tags: ['Travel'] },
-    { amount: 5000, date: '2024-08-11', description: 'Restaurant dinner', tags: ['Dining'] },
-    { amount: 6000, date: '2024-08-12', description: 'Streaming service', tags: ['Entertainment'] }
-  ];
+    // Insert tags
+    const tags = ['Utilities', 'Groceries', 'Travel', 'Entertainment', 'Healthcare'];
+    tags.forEach(tag => {
+      db.run('INSERT INTO Tags (name) VALUES (?)', [tag], function(err) {
+        if (err) {
+          console.error('Error inserting tag:', err.message);
+          return db.run('ROLLBACK');
+        }
+        console.log(`Inserted tag: ${tag} with ID: ${this.lastID}`);
+      });
+    });
 
-  expenses.forEach((expense, index) => {
-    db.run(`
-      INSERT INTO Expenses (user_id, amount, date, description) VALUES (?, ?, ?, ?)
-    `, [userId, expense.amount, expense.date, expense.description], function(err) {
+    // Insert a random user
+    db.run('INSERT INTO Users (username, email) VALUES (?, ?)', ['johndoe', 'john@example.com'], function(err) {
       if (err) {
-        debug('Error inserting expense:', err.message);
-      } else {
-        const expenseId = this.lastID;
-        debug('Inserted expense:', expense.description);
-
-        // Step 4: Link the expense with its tags in the ExpenseTags table
-        expense.tags.forEach(tagName => {
-          db.get(`
-            SELECT tag_id FROM Tags WHERE name = ?
-          `, [tagName], (err, row) => {
-            if (err) {
-              debug('Error fetching tag_id:', err.message);
-            } else if (row) {
-              db.run(`
-                INSERT INTO ExpenseTags (expense_id, tag_id) VALUES (?, ?)
-              `, [expenseId, row.tag_id], function(err) {
-                if (err) {
-                  debug('Error linking expense with tag:', err.message);
-                } else {
-                  debug('Linked expense', expense.description, 'with tag', tagName);
-                }
-              });
-            }
-          });
-        });
+        console.error('Error inserting user:', err.message);
+        return db.run('ROLLBACK');
       }
+      const userId = this.lastID;
+      console.log(`Inserted user with ID: ${userId}`);
+
+      // Insert 10 different expenses
+      const expenses = [
+        { amount: 50.00, date: '2024-08-23', description: 'Electricity bill' },
+        { amount: 100.00, date: '2024-08-22', description: 'Grocery shopping' },
+        { amount: 500.00, date: '2024-08-21', description: 'Flight tickets' },
+        { amount: 30.00, date: '2024-08-20', description: 'Movie night' },
+        { amount: 200.00, date: '2024-08-19', description: 'Doctor visit' },
+        { amount: 75.00, date: '2024-08-18', description: 'Internet bill' },
+        { amount: 60.00, date: '2024-08-17', description: 'Restaurant dinner' },
+        { amount: 150.00, date: '2024-08-16', description: 'Hotel stay' },
+        { amount: 40.00, date: '2024-08-15', description: 'Concert tickets' },
+        { amount: 25.00, date: '2024-08-14', description: 'Pharmacy' }
+      ];
+
+      expenses.forEach((expense, index) => {
+        db.run('INSERT INTO Expenses (user_id, amount, date, description) VALUES (?, ?, ?, ?)',
+          [userId, expense.amount, expense.date, expense.description],
+          function(err) {
+            if (err) {
+              console.error('Error inserting expense:', err.message);
+              return db.run('ROLLBACK');
+            }
+            const expenseId = this.lastID;
+            console.log(`Inserted expense with ID: ${expenseId}`);
+
+            // Link expense to a tag
+            const tagId = (index % 5) + 1; // This will cycle through tag IDs 1-5
+            db.run('INSERT INTO ExpenseTags (expense_id, tag_id) VALUES (?, ?)',
+              [expenseId, tagId],
+              function(err) {
+                if (err) {
+                  console.error('Error linking expense to tag:', err.message);
+                  return db.run('ROLLBACK');
+                }
+                console.log(`Linked expense ${expenseId} to tag ${tagId}`);
+              }
+            );
+          }
+        );
+      });
+
+      // Commit the transaction
+      db.run('COMMIT', (err) => {
+        if (err) {
+          console.error('Error committing transaction:', err.message);
+          return db.run('ROLLBACK');
+        }
+        console.log('Transaction committed successfully');
+        
+        // Close the database connection
+        db.close((err) => {
+          if (err) {
+            console.error('Error closing database:', err.message);
+          } else {
+            console.log('Database connection closed.');
+          }
+        });
+      });
     });
   });
 });
-
-db.close();
